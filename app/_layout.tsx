@@ -1,24 +1,74 @@
+import { useEffect } from 'react';
+import { Provider as ReduxProvider, useSelector } from 'react-redux';
+import { useRouter, useSegments } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { store } from '../src/store';
+import { AuthProvider } from '../src/components/AuthProvider';
+import GlobalSyncProvider from '../src/components/GlobalSyncProvider';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  initialRouteName: '(drawer)',
 };
 
-export default function RootLayout() {
+function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  const { user, householdId, isLoading } = useSelector((state: any) => state.auth);
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return; // Wait until Firebase Auth is done checking
+
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'signup';
+    const inOnboarding = segments[0] === 'onboarding';
+
+    console.log('[ROUTER DEBUG]:', {
+      hasUser: !!user,
+      householdId,
+      inAuthGroup,
+      inOnboarding,
+      segments
+    });
+
+    // We use setTimeout to defer navigation slightly to let the render cycle finish.
+    setTimeout(() => {
+      if (!user && !inAuthGroup) {
+        router.replace('/login');
+      } else if (user && !householdId && !inOnboarding) {
+        router.replace('/onboarding');
+      } else if (user && householdId && inAuthGroup) {
+        router.replace('/');
+      }
+    }, 0);
+  }, [user, householdId, isLoading, segments]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ReduxProvider store={store}>
+      <AuthProvider>
+        <GlobalSyncProvider>
+          <RootLayoutNav />
+        </GlobalSyncProvider>
+      </AuthProvider>
+    </ReduxProvider>
   );
 }

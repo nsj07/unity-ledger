@@ -3,10 +3,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
-import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
+import { type ColorValue, OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
-type IconSymbolName = keyof typeof MAPPING;
+type IconMapping = Record<Extract<SymbolViewProps['name'], string>, ComponentProps<typeof MaterialIcons>['name']>;
+export type IconSymbolName = keyof typeof MAPPING;
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -15,9 +15,28 @@ type IconSymbolName = keyof typeof MAPPING;
  */
 const MAPPING = {
   'house.fill': 'home',
+  'house': 'other-houses',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'arrow.down.left.circle.fill': 'arrow-circle-down',
+  'arrow.up.right.circle.fill': 'arrow-circle-up',
+  'arrow.left.arrow.right.circle.fill': 'swap-horizontal-circle',
+  'chart.line.uptrend.xyaxis.circle.fill': 'trending-up',
+  'rectangle.portrait.and.arrow.right': 'logout',
+  'creditcard.fill': 'credit-card',
+  'chart.pie.fill': 'pie-chart',
+  'chart.bar.xaxis': 'bar-chart',
+  'gearshape.fill': 'settings',
+  'pencil': 'edit',
+  'trash.fill': 'delete',
+  'plus': 'add',
+  'xmark.circle.fill': 'cancel',
+  'chevron.left': 'chevron-left',
+  'person.badge.plus': 'person-add',
+  'doc.on.doc': 'content-copy',
+  'square.and.arrow.up': 'share',
+  'checkmark': 'check',
 } as IconMapping;
 
 /**
@@ -33,9 +52,9 @@ export function IconSymbol({
 }: {
   name: IconSymbolName;
   size?: number;
-  color: string | OpaqueColorValue;
+  color: string | OpaqueColorValue | ColorValue;
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  return <MaterialIcons color={color as string | OpaqueColorValue | undefined} size={size} name={MAPPING[name]} style={style} />;
 }
