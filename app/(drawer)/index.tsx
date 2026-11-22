@@ -98,9 +98,8 @@ export default function DashboardScreen() {
             <Text style={styles.balanceLabel}>Total Household Net Worth</Text>
             <Text style={styles.balanceAmount}>₹{totalBalance.toLocaleString()}</Text>
 
-            <View style={styles.cardFooter}>
-              <Text style={styles.cardFooterText}>{accounts?.length || 0} Connected Accounts</Text>
-              {isLeaderOrCoLeader ? (
+            {isLeaderOrCoLeader ? (
+              <View style={[styles.cardFooter, { justifyContent: 'flex-end' }]}>
                 <TouchableOpacity
                   style={styles.invitePillButton}
                   onPress={() => setShowInviteModal(true)}
@@ -108,8 +107,8 @@ export default function DashboardScreen() {
                   <IconSymbol name="person.badge.plus" size={16} color="#FFFFFF" />
                   <Text style={styles.invitePillText}>Invite</Text>
                 </TouchableOpacity>
-              ) : null}
-            </View>
+              </View>
+            ) : null}
           </LinearGradient>
         </View>
 

@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { type ComponentRef, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -107,6 +108,21 @@ export default function NewTransactionScreen() {
     const [showDestSheet, setShowDestSheet] = useState(false);
     const [showCategorySheet, setShowCategorySheet] = useState(false);
     const [showDateSheet, setShowDateSheet] = useState(false);
+
+    const scrollViewRef = useRef<ComponentRef<typeof ScrollView>>(null);
+    const isNoteFocusedRef = useRef(false);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const sub = Keyboard.addListener(showEvent, () => {
+            if (isNoteFocusedRef.current) {
+                setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                }, 80);
+            }
+        });
+        return () => sub.remove();
+    }, []);
 
     const topPadding =
         Platform.OS === 'android'
@@ -248,13 +264,15 @@ export default function NewTransactionScreen() {
 
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'web' ? undefined : 'padding'}
             >
                 <ScrollView
+                    ref={scrollViewRef}
                     style={styles.scrollView}
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
                 >
                     {/* Inline Error Banner (ensures errors are always visible on mobile & web) */}
                     {errorMessage ? (
@@ -499,6 +517,20 @@ export default function NewTransactionScreen() {
                             numberOfLines={3}
                             maxLength={250}
                             editable={!saving}
+                            onFocus={() => {
+                                isNoteFocusedRef.current = true;
+                                setTimeout(() => {
+                                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                                }, 150);
+                            }}
+                            onBlur={() => {
+                                isNoteFocusedRef.current = false;
+                            }}
+                            onContentSizeChange={() => {
+                                if (isNoteFocusedRef.current) {
+                                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                                }
+                            }}
                         />
                     </View>
                 </ScrollView>
