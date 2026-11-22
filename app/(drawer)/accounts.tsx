@@ -5,8 +5,9 @@ import { AccountService } from '../../src/services/AccountService';
 import { setAccounts, setLoading, setError } from '../../src/store/accountsSlice';
 
 export default function AccountsScreen() {
-    const { householdId } = useSelector((state: any) => state.auth);
+    const { householdId, householdRole, householdAccess } = useSelector((state: any) => state.auth);
     const { accounts, isLoading } = useSelector((state: any) => state.accounts);
+    const isReadOnly = householdRole !== 'leader' && householdRole !== 'co-leader' && householdAccess === 'read-only';
     const dispatch = useDispatch();
 
     const [modalVisible, setModalVisible] = useState(false);
@@ -66,7 +67,9 @@ export default function AccountsScreen() {
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Source Accounts</Text>
-            <Button title="Add New Account" onPress={() => setModalVisible(true)} />
+            {!isReadOnly ? (
+                <Button title="Add New Account" onPress={() => setModalVisible(true)} />
+            ) : null}
 
             {isLoading ? (
                 <Text style={styles.loading}>Loading accounts...</Text>

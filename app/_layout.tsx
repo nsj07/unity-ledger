@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { Provider as ReduxProvider, useSelector } from 'react-redux';
-import { useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { store } from '../src/store';
@@ -47,6 +48,17 @@ function RootLayoutNav() {
     }, 0);
   }, [user, householdId, isLoading, segments]);
 
+  if (isLoading) {
+    return (
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colorScheme === 'dark' ? '#111827' : '#F7F9FC' }}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+        </View>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
@@ -54,6 +66,7 @@ function RootLayoutNav() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="new-transaction" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
@@ -63,12 +76,14 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <ReduxProvider store={store}>
-      <AuthProvider>
-        <GlobalSyncProvider>
-          <RootLayoutNav />
-        </GlobalSyncProvider>
-      </AuthProvider>
-    </ReduxProvider>
+    <SafeAreaProvider>
+      <ReduxProvider store={store}>
+        <AuthProvider>
+          <GlobalSyncProvider>
+            <RootLayoutNav />
+          </GlobalSyncProvider>
+        </AuthProvider>
+      </ReduxProvider>
+    </SafeAreaProvider>
   );
 }

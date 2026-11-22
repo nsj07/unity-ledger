@@ -33,10 +33,17 @@ const MAPPING = {
   'plus': 'add',
   'xmark.circle.fill': 'cancel',
   'chevron.left': 'chevron-left',
+  'chevron.down': 'keyboard-arrow-down',
   'person.badge.plus': 'person-add',
+  'person.2.fill': 'groups',
+  'lock.fill': 'lock',
   'doc.on.doc': 'content-copy',
   'square.and.arrow.up': 'share',
   'checkmark': 'check',
+  'calendar': 'calendar-today',
+  'tag.fill': 'label',
+  'note.text': 'notes',
+  'line.3.horizontal': 'menu',
 } as IconMapping;
 
 /**

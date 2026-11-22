@@ -11,8 +11,9 @@ export default function CategoriesScreen() {
     const colorScheme = useColorScheme();
     const styles = createStyles(colorScheme);
 
-    const { householdId } = useSelector((state: any) => state.auth);
+    const { householdId, householdRole, householdAccess } = useSelector((state: any) => state.auth);
     const { categories, isLoading } = useSelector((state: any) => state.categories);
+    const isReadOnly = householdRole !== 'leader' && householdRole !== 'co-leader' && householdAccess === 'read-only';
     const dispatch = useDispatch();
 
     // Modal State
@@ -147,14 +148,16 @@ export default function CategoriesScreen() {
                         <Text style={[styles.typeBadgeText, { color: getTypeColor(item.type) }]}>{item.type}</Text>
                     </View>
                 </View>
-                <View style={styles.cardActions}>
-                    <TouchableOpacity style={styles.iconButton} onPress={() => openEditModal(item)}>
-                        <IconSymbol name="pencil" size={20} color="#6B7280" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteCategory(item.id, item.name)}>
-                        <IconSymbol name="trash.fill" size={20} color="#EF4444" />
-                    </TouchableOpacity>
-                </View>
+                {!isReadOnly ? (
+                    <View style={styles.cardActions}>
+                        <TouchableOpacity style={styles.iconButton} onPress={() => openEditModal(item)}>
+                            <IconSymbol name="pencil" size={20} color="#6B7280" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteCategory(item.id, item.name)}>
+                            <IconSymbol name="trash.fill" size={20} color="#EF4444" />
+                        </TouchableOpacity>
+                    </View>
+                ) : null}
             </View>
 
             {item.subcategories && item.subcategories.length > 0 && (
@@ -173,10 +176,12 @@ export default function CategoriesScreen() {
         <SafeAreaView style={styles.container}>
             <View style={styles.headerRow}>
                 <Text style={styles.title}>Categories</Text>
-                <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-                    <IconSymbol name="plus" size={18} color="#FFF" />
-                    <Text style={styles.addButtonText}>New</Text>
-                </TouchableOpacity>
+                {!isReadOnly ? (
+                    <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+                        <IconSymbol name="plus" size={18} color="#FFF" />
+                        <Text style={styles.addButtonText}>New</Text>
+                    </TouchableOpacity>
+                ) : null}
             </View>
 
             {isLoading ? (

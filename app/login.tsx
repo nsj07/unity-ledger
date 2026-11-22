@@ -22,26 +22,22 @@ export default function LoginScreen() {
 
         store.dispatch(setLoading(true));
         const response = await AuthService.loginUser(email, password);
-        store.dispatch(setLoading(false));
 
         if (response.error) {
+            store.dispatch(setLoading(false));
             Alert.alert('Login Failed', response.error);
-        } else {
-            console.log("Login Success, checking household...", response.user?.uid);
-            // The Auth context and `app/_layout.tsx` effect intercepts standard routing securely.
-            router.replace('/'); // Redirect to home (drawer) layout
         }
+        // On success, AuthProvider resolves the user's most recently active household,
+        // clears isLoading, and RootLayoutNav routes directly to Dashboard (or Onboarding if none).
     };
 
     const handleGoogleLogin = async () => {
         store.dispatch(setLoading(true));
         const response = await AuthService.loginWithGoogle();
-        store.dispatch(setLoading(false));
 
         if (response.error) {
+            store.dispatch(setLoading(false));
             Alert.alert('Google Auth Notice', response.error);
-        } else {
-            router.replace('/');
         }
     };
 

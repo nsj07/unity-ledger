@@ -5,8 +5,9 @@ import { InvestmentService } from '../../src/services/InvestmentService';
 import { setInvestments, setLoading, setError } from '../../src/store/investmentsSlice';
 
 export default function InvestmentsScreen() {
-    const { householdId } = useSelector((state: any) => state.auth);
+    const { householdId, householdRole, householdAccess } = useSelector((state: any) => state.auth);
     const { investments, isLoading } = useSelector((state: any) => state.investments);
+    const isReadOnly = householdRole !== 'leader' && householdRole !== 'co-leader' && householdAccess === 'read-only';
     const dispatch = useDispatch();
 
     const [modalVisible, setModalVisible] = useState(false);
@@ -74,7 +75,9 @@ export default function InvestmentsScreen() {
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Wealth & Investments</Text>
-            <Button title="Add Investment" onPress={() => setModalVisible(true)} />
+            {!isReadOnly ? (
+                <Button title="Add Investment" onPress={() => setModalVisible(true)} />
+            ) : null}
 
             {isLoading ? (
                 <Text style={styles.loading}>Loading investments...</Text>

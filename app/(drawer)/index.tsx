@@ -1,72 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, SafeAreaView, StatusBar, Modal } from 'react-native';
-import { useSelector, useDispatch } from 'react-redux';
-import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import InviteModal from '@/src/components/InviteModal';
-import { AuthService } from '@/src/services/AuthService';
-import { HouseholdService } from '@/src/services/HouseholdService';
-import { clearAuth, setHouseholdContext } from '@/src/store/authSlice';
+import MemberControlModal, { HouseholdMemberItem } from '@/src/components/MemberControlModal';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSelector } from 'react-redux';
+import { styles } from './index.styles';
 
 // Premium Dashboard Entry
 export default function DashboardScreen() {
-  const dispatch = useDispatch();
-  const { user, householdId, householdName, householdRole } = useSelector((state: any) => state.auth);
+  const { user, householdId, householdName, householdRole, householdAccess, householdMembers } =
+    useSelector((state: any) => state.auth);
   const { accounts } = useSelector((state: any) => state.accounts);
   const { transactions } = useSelector((state: any) => state.transactions);
 
-  const [totalBalance, setTotalBalance] = useState(0);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [availableHouseholds, setAvailableHouseholds] = useState<any[]>([]);
-  const isLeader = householdRole === 'leader';
+  const [selectedMember, setSelectedMember] = useState<HouseholdMemberItem | null>(null);
+
+  const isLeaderOrCoLeader = householdRole === 'leader' || householdRole === 'co-leader';
+  const isReadOnly = !isLeaderOrCoLeader && householdAccess === 'read-only';
 
   // Calculate Net balance
-  useEffect(() => {
-    if (accounts && accounts.length > 0) {
-      const sum = accounts.reduce((acc: number, curr: any) => acc + (curr.balance || 0), 0);
-      setTotalBalance(sum);
-    } else {
-      setTotalBalance(0);
-    }
+  const totalBalance = useMemo(() => {
+    if (!accounts || accounts.length === 0) return 0;
+    return accounts.reduce((acc: number, curr: any) => acc + (curr.balance || 0), 0);
   }, [accounts]);
 
-  // Load available households when Profile opens (or on mount)
-  const fetchHouseholds = async () => {
-    if (user?.uid) {
-      const res = await HouseholdService.getUserHouseholds(user.uid);
-      if (!res.error) setAvailableHouseholds(res.households);
-    }
-  };
-
-  const handleLogout = async () => {
-    setShowProfileMenu(false);
-    await AuthService.logoutUser();
-    dispatch(clearAuth());
-    router.replace('/login');
-  };
-
-  const handleCreateOrJoinNew = () => {
-    setShowProfileMenu(false);
-    router.push('/onboarding');
-  };
-
-  const handleSwitchActiveHousehold = async (hh: any) => {
-    setShowProfileMenu(false);
-    if (hh.id === householdId) return;
-
-    await HouseholdService.switchActiveHousehold(user.uid, hh.id);
-    dispatch(setHouseholdContext({
-      householdId: hh.id,
-      householdName: hh.name,
-      householdRole: hh.role
-    }));
-    // Layout and GlobalSyncProvider will automagically intercept the householdId swap
-    // and wipe/re-subscribe the Redux accounts/transactions appropriately!
-  };
-
-  const renderTransactionItem = ({ item }: { item: any }) => {
+  const renderTransactionItem = (item: any) => {
     const isExpense = item.type === 'Expense';
     const isTransfer = item.type === 'Transfer';
     const isInvest = item.type === 'Investment';
@@ -86,123 +47,176 @@ export default function DashboardScreen() {
     }
 
     return (
-      <View style={styles.txnCard}>
+      <TouchableOpacity
+        key={item.id}
+        style={styles.txnCard}
+        disabled={isReadOnly}
+        activeOpacity={isReadOnly ? 1 : 0.75}
+        onPress={() =>
+          router.push({ pathname: '/new-transaction', params: { transactionId: item.id } })
+        }
+      >
         <View style={styles.txnLeft}>
           <IconSymbol name={icon} size={36} color={color} />
           <View style={styles.txnTextContainer}>
             <Text style={styles.txnCategory}>{item.subcategory_name || item.type}</Text>
-            <Text style={styles.txnDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+            <Text style={styles.txnDate} numberOfLines={1}>
+              {new Date(item.transaction_date || item.created_at).toLocaleDateString()}
+              {item.note ? ` • ${item.note}` : ''}
+            </Text>
           </View>
         </View>
         <Text style={[styles.txnAmount, { color }]}>
           {isExpense ? '-' : (isTransfer ? '' : '+')}₹{item.amount.toLocaleString()}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
-      {/* Header Profile Area */}
-      <View style={styles.header}>
-        <View>
+    <View style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Compact Greeting Row */}
+        <View style={styles.header}>
           <Text style={styles.greeting}>Hello, {user?.displayName || 'User'}</Text>
-          <Text style={styles.householdBadge}>{householdName || 'My Household'}</Text>
+          {isReadOnly ? (
+            <View style={styles.readOnlyBadge}>
+              <IconSymbol name="lock.fill" size={12} color="#B45309" />
+              <Text style={styles.readOnlyBadgeText}>Read-Only</Text>
+            </View>
+          ) : null}
         </View>
-        <TouchableOpacity onPress={() => {
-          setShowProfileMenu(true);
-          fetchHouseholds();
-        }}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{user?.displayName ? user.displayName[0] : 'U'}</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
 
-      {/* Main Balance Card (Glassmorphism inspired) */}
-      <View style={styles.cardWrapper}>
-        <LinearGradient
-          colors={['#1e3c72', '#2a5298']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.balanceCard}
+        {/* Main Balance Card */}
+        <View style={styles.cardWrapper}>
+          <LinearGradient
+            colors={['#1e3c72', '#2a5298']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.balanceCard}
+          >
+            <Text style={styles.balanceLabel}>Total Household Net Worth</Text>
+            <Text style={styles.balanceAmount}>₹{totalBalance.toLocaleString()}</Text>
+
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardFooterText}>{accounts?.length || 0} Connected Accounts</Text>
+              {isLeaderOrCoLeader ? (
+                <TouchableOpacity
+                  style={styles.invitePillButton}
+                  onPress={() => setShowInviteModal(true)}
+                >
+                  <IconSymbol name="person.badge.plus" size={16} color="#FFFFFF" />
+                  <Text style={styles.invitePillText}>Invite</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </LinearGradient>
+        </View>
+
+        {/* Compact Household Members Strip */}
+        <View style={styles.membersSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              Household Members ({householdMembers?.length || 0})
+            </Text>
+            <TouchableOpacity onPress={() => router.push('/(drawer)/members')}>
+              <Text style={styles.seeAll}>Manage ›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.membersStrip}
+          >
+            {(householdMembers || []).map((member: HouseholdMemberItem) => {
+              const isMe = member.uid === user?.uid;
+              const canManage = isLeaderOrCoLeader && !isMe && member.role !== 'leader';
+              const roleLabel =
+                member.role === 'leader'
+                  ? 'Leader'
+                  : member.role === 'co-leader'
+                    ? 'Co-Leader'
+                    : member.access === 'read-only'
+                      ? 'Read-Only'
+                      : 'Member';
+
+              return (
+                <TouchableOpacity
+                  key={member.uid}
+                  style={styles.memberChip}
+                  disabled={!canManage}
+                  onPress={() => setSelectedMember(member)}
+                  activeOpacity={canManage ? 0.75 : 1}
+                >
+                  <View
+                    style={[
+                      styles.memberAvatar,
+                      member.role === 'leader' && { backgroundColor: '#2563EB' },
+                      member.role === 'co-leader' && { backgroundColor: '#4F46E5' },
+                    ]}
+                  >
+                    <Text style={styles.memberAvatarText}>
+                      {member.displayName ? member.displayName[0].toUpperCase() : 'M'}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={styles.memberChipName} numberOfLines={1}>
+                      {member.displayName}
+                      {isMe ? ' (You)' : ''}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.memberChipRole,
+                        member.role === 'member' && member.access === 'read-only' && { color: '#B45309' },
+                      ]}
+                    >
+                      {roleLabel}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Recent Transactions */}
+        <View style={styles.content}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <TouchableOpacity onPress={() => router.push('/(drawer)/transactions')}>
+              <Text style={styles.seeAll}>See All</Text>
+            </TouchableOpacity>
+          </View>
+
+          {transactions?.length > 0 ? (
+            transactions.slice(0, 5).map(renderTransactionItem)
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No transactions yet.</Text>
+              <Text style={styles.emptyStateSub}>
+                {isReadOnly
+                  ? 'You have read-only access to this household.'
+                  : 'Tap + below to record your first transaction!'}
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Floating Action Button (hidden for Read-Only members) */}
+      {!isReadOnly ? (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push('/new-transaction')}
+          activeOpacity={0.85}
         >
-          <Text style={styles.balanceLabel}>Total Household Net Worth</Text>
-          <Text style={styles.balanceAmount}>₹{totalBalance.toLocaleString()}</Text>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.cardFooterText}>{accounts?.length || 0} Connected Accounts</Text>
-            {isLeader ? (
-              <TouchableOpacity
-                style={styles.invitePillButton}
-                onPress={() => setShowInviteModal(true)}
-              >
-                <IconSymbol name="person.badge.plus" size={16} color="#FFFFFF" />
-                <Text style={styles.invitePillText}>Invite</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </LinearGradient>
-      </View>
-
-      {/* Content Area */}
-      <View style={styles.content}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          <Text style={styles.seeAll}>See All</Text>
-        </View>
-
-        {transactions?.length > 0 ? (
-          <FlatList
-            data={transactions.slice(0, 5)} // Show only top 5 recent
-            keyExtractor={item => item.id}
-            renderItem={renderTransactionItem}
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No transactions yet.</Text>
-            <Text style={styles.emptyStateSub}>Head to the Accounts tab to add funds!</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Profile Modal */}
-      <Modal visible={showProfileMenu} transparent={true} animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowProfileMenu(false)}>
-          <View style={styles.menuBox}>
-            <Text style={styles.menuTitle}>My Households</Text>
-
-            {availableHouseholds.map(hh => (
-              <TouchableOpacity
-                key={hh.id}
-                style={[styles.menuItem, hh.id === householdId && styles.menuItemActive]}
-                onPress={() => handleSwitchActiveHousehold(hh)}
-              >
-                <IconSymbol name={hh.id === householdId ? "house.fill" : "house"} size={20} color={hh.id === householdId ? "#3B82F6" : "#4B5563"} />
-                <Text style={[styles.menuText, hh.id === householdId && styles.menuTextActive]}>{hh.name || "Default Household"}</Text>
-              </TouchableOpacity>
-            ))}
-
-            <View style={styles.divider} />
-            <Text style={styles.menuTitle}>Profile Options</Text>
-            <TouchableOpacity style={styles.menuItem} onPress={handleCreateOrJoinNew}>
-              <IconSymbol name="chart.pie.fill" size={24} color="#333" />
-              <Text style={styles.menuText}>Create / Join New</Text>
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-              <IconSymbol name="rectangle.portrait.and.arrow.right" size={24} color="#FF3B30" />
-              <Text style={[styles.menuText, { color: '#FF3B30' }]}>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
+          <IconSymbol name="plus" size={28} color="#FFFFFF" />
         </TouchableOpacity>
-      </Modal>
+      ) : null}
 
-      {/* Leader-only Invite Popup */}
-      {isLeader && householdId && user?.uid ? (
+      {/* Leader / Co-Leader Invite Popup */}
+      {isLeaderOrCoLeader && householdId && user?.uid ? (
         <InviteModal
           visible={showInviteModal}
           onClose={() => setShowInviteModal(false)}
@@ -213,8 +227,15 @@ export default function DashboardScreen() {
         />
       ) : null}
 
-    </SafeAreaView>
+      {/* Quick Member Control Modal (for Leaders & Co-Leaders) */}
+      {householdId ? (
+        <MemberControlModal
+          visible={!!selectedMember}
+          member={selectedMember}
+          householdId={householdId}
+          onClose={() => setSelectedMember(null)}
+        />
+      ) : null}
+    </View>
   );
 }
-
-import { styles } from './index.styles';

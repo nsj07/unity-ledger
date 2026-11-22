@@ -24,11 +24,17 @@ rules_version = '2';
 //      - id: string (required, immutable, must equal {householdId}, 1..128 chars)
 //      - name: string (required, 1..100 chars)
 //      - currency_default: string (required, 1..10 chars, e.g. "INR")
-//      - members: map (required, 1..50 entries, maps uid -> { role: "leader" } on create,
-//        or { role: "member", invite_code: string } on invitation-backed self-join)
+//      - members: map (required, 1..50 entries, maps uid -> {
+//          role: "leader" | "co-leader" | "member" (required),
+//          access: "read-write" | "read-only" (optional for legacy docs; defaults to "read-write"),
+//          display_name: string (optional, 1..100 chars),
+//          invite_code: string (optional, 1..32 chars, required on self-join)
+//        })
 //      - memberIds: list (required on all new writes, 1..50 UID strings, kept in sync with members map;
 //        legacy documents created before `memberIds` was introduced may only have `members`)
 //      - created_at: timestamp (required, immutable, within +/- 1h of request.time on create)
+//      - last_updated_member_uid: string (optional, 1..128 chars, set during leader/co-leader member
+//        management updates to identify the single target member entry being modified)
 //
 // 3. Collection: invitations
 //    Document ID: {inviteCode} (6..32 uppercase alphanumeric characters)
@@ -60,7 +66,7 @@ rules_version = '2';
 //
 // 6. Subcollection: households/{householdId}/transactions
 //    Document ID: {transactionId} (auto-generated)
-//    Immutable ledger entries (update and delete denied to preserve account balance integrity).
+//    Readable by household members; create, update, and delete require household write access.
 //    Fields:
 //      - type: string (required, enum: "Expense" | "Income" | "Transfer")
 //      - amount: number (required, > 0 and <= 1e12)
@@ -68,8 +74,10 @@ rules_version = '2';
 //      - to_account_id: string | null (required; non-null existing different account_id for "Transfer", null otherwise)
 //      - category_id: string | null (required, null or 1..128 chars)
 //      - subcategory_name: string | null (required, null or 1..100 chars)
-//      - added_by: string (required, must equal request.auth.uid)
-//      - created_at: timestamp (required, within +/- 1h of request.time on create)
+//      - note: string | null (optional, null or 1..250 chars)
+//      - transaction_date: timestamp | null (optional, user-selected transaction date; may be backdated or updated)
+//      - added_by: string (required, immutable on update, 1..128 chars, must equal request.auth.uid on create)
+//      - created_at: timestamp (required, immutable on update, within +/- 1h of request.time on create)
 //
 // 7. Subcollection: households/{householdId}/investments
 //    Document ID: {investmentId} (auto-generated)
@@ -184,7 +192,7 @@ service cloud.firestore {
              !isMemberOfHouseholdData(get(/databases/$(database)/documents/households/$(householdId)).data);
     }
 
-    // Check whether the authenticated user is a leader in household document data
+    // Check whether the authenticated user is a leader or co-leader in household document data
     // (Supports legacy households that only have the `members` map without `memberIds`)
     function isLeaderOfHouseholdData(hhData) {
       return 'members' in hhData &&
@@ -192,12 +200,12 @@ service cloud.firestore {
              request.auth.uid in hhData.members &&
              hhData.members[request.auth.uid] is map &&
              'role' in hhData.members[request.auth.uid] &&
-             hhData.members[request.auth.uid].role == 'leader' &&
+             hhData.members[request.auth.uid].role in ['leader', 'co-leader'] &&
              (!('memberIds' in hhData) ||
               (hhData.memberIds is list && request.auth.uid in hhData.memberIds));
     }
 
-    // Check whether a household exists and the authenticated user is a leader
+    // Check whether a household exists and the authenticated user is a leader or co-leader
     function isLeaderOfHousehold(householdId) {
       return isAuthenticated() &&
              isNonEmptyString(householdId, 128) &&
@@ -205,17 +213,35 @@ service cloud.firestore {
              isLeaderOfHouseholdData(get(/databases/$(database)/documents/households/$(householdId)).data);
     }
 
-    // Check whether the authenticated user is a leader of the current household document
+    // Check whether the authenticated user is a leader or co-leader of the current household document
     // (Supports legacy households that only have the `members` map without `memberIds`)
     function isHouseholdLeader() {
+      return isAuthenticated() && isLeaderOfHouseholdData(resource.data);
+    }
+
+    // Check whether the authenticated user has write access in household document data
+    // (Leaders and co-leaders always have write access; regular members have write access unless
+    // explicitly marked 'read-only'; legacy members without an `access` field default to 'read-write')
+    function canWriteHouseholdDataDoc(hhData) {
+      return isMemberOfHouseholdData(hhData) &&
+             'members' in hhData &&
+             hhData.members is map &&
+             request.auth.uid in hhData.members &&
+             hhData.members[request.auth.uid] is map &&
+             'role' in hhData.members[request.auth.uid] &&
+             (
+               hhData.members[request.auth.uid].role in ['leader', 'co-leader'] ||
+               !('access' in hhData.members[request.auth.uid]) ||
+               hhData.members[request.auth.uid].access == 'read-write'
+             );
+    }
+
+    // Check whether a household exists and the authenticated user is allowed to write subcollection data
+    function canWriteHouseholdData(householdId) {
       return isAuthenticated() &&
-             'members' in resource.data &&
-             resource.data.members is map &&
-             request.auth.uid in resource.data.members &&
-             resource.data.members[request.auth.uid] is map &&
-             resource.data.members[request.auth.uid].role == 'leader' &&
-             (!('memberIds' in resource.data) ||
-              (resource.data.memberIds is list && request.auth.uid in resource.data.memberIds));
+             isNonEmptyString(householdId, 128) &&
+             exists(/databases/$(database)/documents/households/$(householdId)) &&
+             canWriteHouseholdDataDoc(get(/databases/$(database)/documents/households/$(householdId)).data);
     }
 
     // Check whether an account exists within a specific household
@@ -257,7 +283,10 @@ service cloud.firestore {
     }
 
     function isValidHousehold(data, householdId) {
-      return hasOnlyAllowedFields(['id', 'name', 'currency_default', 'members', 'memberIds', 'created_at']) &&
+      return hasOnlyAllowedFields([
+               'id', 'name', 'currency_default', 'members', 'memberIds',
+               'created_at', 'last_updated_member_uid'
+             ]) &&
              hasRequiredFields(['id', 'name', 'currency_default', 'members', 'memberIds', 'created_at']) &&
              isNonEmptyString(data.id, 128) && data.id == householdId &&
              isNonEmptyString(data.name, 100) &&
@@ -265,18 +294,27 @@ service cloud.firestore {
              data.members is map && data.members.size() >= 1 && data.members.size() <= 50 &&
              isValidList(data.memberIds, 50) && data.memberIds.size() >= 1 &&
              data.members.size() == data.memberIds.size() &&
-             data.created_at is timestamp;
+             data.created_at is timestamp &&
+             (!('last_updated_member_uid' in data) || isNonEmptyString(data.last_updated_member_uid, 128));
+    }
+
+    function isValidCreatorMemberEntry(entry) {
+      return entry is map &&
+             entry.keys().hasOnly(['role', 'access', 'display_name']) &&
+             'role' in entry &&
+             entry.role == 'leader' &&
+             (!('access' in entry) || entry.access == 'read-write') &&
+             (!('display_name' in entry) || isNonEmptyString(entry.display_name, 100));
     }
 
     function isValidHouseholdCreate(data, householdId) {
       return isValidHousehold(data, householdId) &&
+             !('last_updated_member_uid' in data) &&
              isReasonableTimestamp(data.created_at) &&
              data.memberIds == [request.auth.uid] &&
              data.members.size() == 1 &&
              request.auth.uid in data.members &&
-             data.members[request.auth.uid] is map &&
-             data.members[request.auth.uid].keys().hasOnly(['role']) &&
-             data.members[request.auth.uid].role == 'leader';
+             isValidCreatorMemberEntry(data.members[request.auth.uid]);
     }
 
     // Verify pre- and post-commit invitation state during atomic household self-join
@@ -302,9 +340,11 @@ service cloud.firestore {
     // Validate the newly added member entry and atomic invitation redemption
     function isValidSelfJoinMemberEntry(householdId, newMember) {
       return newMember is map &&
-             newMember.keys().hasOnly(['role', 'invite_code']) &&
+             newMember.keys().hasOnly(['role', 'access', 'display_name', 'invite_code']) &&
              newMember.keys().hasAll(['role', 'invite_code']) &&
              newMember.role == 'member' &&
+             (!('access' in newMember) || newMember.access == 'read-write') &&
+             (!('display_name' in newMember) || isNonEmptyString(newMember.display_name, 100)) &&
              isNonEmptyString(newMember.invite_code, 32) &&
              isValidInvitationRedemption(householdId, newMember.invite_code);
     }
@@ -328,10 +368,80 @@ service cloud.firestore {
              request.resource.data.memberIds.hasAll(resource.data.memberIds);
     }
 
-    // Household leader can update household metadata (name, currency_default) only
+    // Household leader or co-leader can update household metadata (name, currency_default) only
     function isValidLeaderMetadataUpdate() {
       return isHouseholdLeader() &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currency_default']);
+    }
+
+    // Validate a single non-leader member entry updated by a leader or co-leader
+    function isValidManagedMemberEntry(beforeEntry, afterEntry) {
+      return beforeEntry is map &&
+             'role' in beforeEntry &&
+             beforeEntry.role != 'leader' &&
+             afterEntry is map &&
+             afterEntry.keys().hasOnly(['role', 'access', 'display_name', 'invite_code']) &&
+             afterEntry.keys().hasAll(['role', 'access']) &&
+             afterEntry.role in ['member', 'co-leader'] &&
+             afterEntry.access in ['read-write', 'read-only'] &&
+             (afterEntry.role != 'co-leader' || afterEntry.access == 'read-write') &&
+             afterEntry.diff(beforeEntry).affectedKeys().hasOnly(['role', 'access']) &&
+             (!('display_name' in afterEntry) || isNonEmptyString(afterEntry.display_name, 100)) &&
+             (!('invite_code' in afterEntry) || isNonEmptyString(afterEntry.invite_code, 32));
+    }
+
+    function isValidManagedMemberDiff(targetUid, membersDiff) {
+      return targetUid != request.auth.uid &&
+             membersDiff.addedKeys().size() == 0 &&
+             membersDiff.removedKeys().size() == 0 &&
+             membersDiff.changedKeys().size() == 1 &&
+             membersDiff.changedKeys().hasOnly([targetUid]) &&
+             targetUid in resource.data.members &&
+             targetUid in request.resource.data.members &&
+             isValidManagedMemberEntry(
+               resource.data.members[targetUid],
+               request.resource.data.members[targetUid]
+             );
+    }
+
+    // Household leader or co-leader can update role/access of a single other non-leader member
+    function isValidMemberManagementUpdate() {
+      return isHouseholdLeader() &&
+             'last_updated_member_uid' in request.resource.data &&
+             isNonEmptyString(request.resource.data.last_updated_member_uid, 128) &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'members', 'last_updated_member_uid'
+             ]) &&
+             isValidManagedMemberDiff(
+               request.resource.data.last_updated_member_uid,
+               request.resource.data.members.diff(resource.data.members)
+             );
+    }
+
+    function isValidOwnDisplayNameEntry(beforeEntry, afterEntry) {
+      return beforeEntry is map &&
+             afterEntry is map &&
+             afterEntry.keys().hasOnly(['role', 'access', 'display_name', 'invite_code']) &&
+             afterEntry.diff(beforeEntry).affectedKeys().hasOnly(['display_name']) &&
+             'display_name' in afterEntry &&
+             isNonEmptyString(afterEntry.display_name, 100);
+    }
+
+    // Existing household member can backfill/update only their own display_name inside members[uid]
+    function isValidOwnDisplayNameBackfill() {
+      let membersDiff = request.resource.data.members.diff(resource.data.members);
+      return isMemberOfHouseholdData(resource.data) &&
+             request.auth.uid in resource.data.members &&
+             request.auth.uid in request.resource.data.members &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+             membersDiff.addedKeys().size() == 0 &&
+             membersDiff.removedKeys().size() == 0 &&
+             membersDiff.changedKeys().size() == 1 &&
+             membersDiff.changedKeys().hasOnly([request.auth.uid]) &&
+             isValidOwnDisplayNameEntry(
+               resource.data.members[request.auth.uid],
+               request.resource.data.members[request.auth.uid]
+             );
     }
 
     // Shared invitation schema validator (called in BOTH create and update rules)
@@ -391,10 +501,11 @@ service cloud.firestore {
              isValidList(data.subcategories, 50);
     }
 
-    function isValidTransaction(data, householdId) {
+    function isValidTransactionUpdate(data, householdId) {
       return hasOnlyAllowedFields([
                'type', 'amount', 'account_id', 'to_account_id',
-               'category_id', 'subcategory_name', 'added_by', 'created_at'
+               'category_id', 'subcategory_name', 'note', 'transaction_date',
+               'added_by', 'created_at'
              ]) &&
              hasRequiredFields([
                'type', 'amount', 'account_id', 'to_account_id',
@@ -413,7 +524,17 @@ service cloud.firestore {
              ) &&
              isNullableString(data.category_id, 128) &&
              isNullableString(data.subcategory_name, 100) &&
-             data.added_by is string && data.added_by == request.auth.uid &&
+             (!('note' in data) || isNullableString(data.note, 250)) &&
+             (!('transaction_date' in data) ||
+              data.transaction_date == null ||
+              data.transaction_date is timestamp) &&
+             isNonEmptyString(data.added_by, 128) &&
+             data.created_at is timestamp;
+    }
+
+    function isValidTransaction(data, householdId) {
+      return isValidTransactionUpdate(data, householdId) &&
+             data.added_by == request.auth.uid &&
              isReasonableTimestamp(data.created_at);
     }
 
@@ -473,53 +594,62 @@ service cloud.firestore {
       // Updates allowed ONLY for:
       // 1) A non-member self-joining strictly as 'member' by atomically redeeming a valid invitation
       //    without altering metadata or other members
-      // 2) An existing 'leader' updating household name or currency_default
+      // 2) An existing 'leader' or 'co-leader' updating household name or currency_default
+      // 3) An existing 'leader' or 'co-leader' updating role/access of a single other non-leader member
+      // 4) An existing member backfilling/updating only their own display_name in members[uid]
       allow update: if isAuthenticated() &&
                        areImmutableFieldsUnchanged(['id', 'created_at']) &&
                        isValidHousehold(request.resource.data, householdId) &&
-                       (isValidSelfJoin(householdId) || isValidLeaderMetadataUpdate());
+                       (
+                         isValidSelfJoin(householdId) ||
+                         isValidLeaderMetadataUpdate() ||
+                         isValidMemberManagementUpdate() ||
+                         isValidOwnDisplayNameBackfill()
+                       );
 
       // Prevent client-side deletion of households and orphaned subcollections
       allow delete: if false;
 
       // -------------------------------------------------------------
-      // Household Subcollections (Strictly scoped to household members)
+      // Household Subcollections (Strictly scoped to household members;
+      // writes require leader/co-leader role or read-write access)
       // -------------------------------------------------------------
 
       match /accounts/{accountId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) &&
+        allow create: if canWriteHouseholdData(householdId) &&
                          isValidAccount(request.resource.data);
-        allow update: if isHouseholdMember(householdId) &&
+        allow update: if canWriteHouseholdData(householdId) &&
                          isValidAccount(request.resource.data);
-        allow delete: if isHouseholdMember(householdId);
+        allow delete: if canWriteHouseholdData(householdId);
       }
 
       match /categories/{categoryId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) &&
+        allow create: if canWriteHouseholdData(householdId) &&
                          isValidCategory(request.resource.data);
-        allow update: if isHouseholdMember(householdId) &&
+        allow update: if canWriteHouseholdData(householdId) &&
                          isValidCategory(request.resource.data);
-        allow delete: if isHouseholdMember(householdId);
+        allow delete: if canWriteHouseholdData(householdId);
       }
 
       match /transactions/{transactionId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) &&
+        allow create: if canWriteHouseholdData(householdId) &&
                          isValidTransaction(request.resource.data, householdId);
-        // Transactions are immutable ledger records to preserve account balance consistency
-        allow update: if false;
-        allow delete: if false;
+        allow update: if canWriteHouseholdData(householdId) &&
+                         areImmutableFieldsUnchanged(['added_by', 'created_at']) &&
+                         isValidTransactionUpdate(request.resource.data, householdId);
+        allow delete: if canWriteHouseholdData(householdId);
       }
 
       match /investments/{investmentId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) &&
+        allow create: if canWriteHouseholdData(householdId) &&
                          isValidInvestment(request.resource.data);
-        allow update: if isHouseholdMember(householdId) &&
+        allow update: if canWriteHouseholdData(householdId) &&
                          isValidInvestment(request.resource.data);
-        allow delete: if isHouseholdMember(householdId);
+        allow delete: if canWriteHouseholdData(householdId);
       }
     }
 
@@ -529,7 +659,7 @@ service cloud.firestore {
       allow get: if isAuthenticated();
       allow list: if false;
 
-      // Only an authenticated leader of the target household may create an active, expiring invite
+      // Only an authenticated leader or co-leader of the target household may create an active, expiring invite
       allow create: if isAuthenticated() &&
                        isValidInvitationCreate(request.resource.data, inviteCode) &&
                        isLeaderOfHousehold(request.resource.data.household_id);

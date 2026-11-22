@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthService } from '../src/services/AuthService';
 import { store } from '../src/store';
-import { setLoading } from '../src/store/authSlice';
+import { setLoading, setUser } from '../src/store/authSlice';
 
 export default function SignupScreen() {
     const colorScheme = useColorScheme();
@@ -27,7 +27,15 @@ export default function SignupScreen() {
 
         setSubmitting(true);
         store.dispatch(setLoading(true));
-        const response = await AuthService.registerUser(email.trim(), password, name.trim());
+        const cleanName = name.trim();
+        const response = await AuthService.registerUser(email.trim(), password, cleanName);
+        if (response.user) {
+            store.dispatch(setUser({
+                uid: response.user.uid,
+                email: response.user.email,
+                displayName: cleanName,
+            }));
+        }
         store.dispatch(setLoading(false));
         setSubmitting(false);
 

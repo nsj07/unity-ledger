@@ -92,12 +92,13 @@ export const InvitationService = {
      * Atomically redeems a single-use, unexpired invitation code and adds the user
      * as a 'member' of the target household.
      */
-    redeemInvitation: async (userId, rawCode) => {
+    redeemInvitation: async (userId, rawCode, userDisplayName = 'Member') => {
         try {
             const code = normalizeInviteCode(rawCode);
             if (!code || code.length < 6) {
                 return { success: false, error: 'Please enter a valid invitation code.' };
             }
+            const cleanDisplayName = (userDisplayName || 'Member').trim().slice(0, 100);
 
             const result = await runTransaction(db, async (transaction) => {
                 const inviteRef = doc(db, 'invitations', code);
@@ -143,7 +144,12 @@ export const InvitationService = {
 
                 const updatedMembers = {
                     ...(householdData.members || {}),
-                    [userId]: { role: 'member', invite_code: code },
+                    [userId]: {
+                        role: 'member',
+                        access: 'read-write',
+                        display_name: cleanDisplayName,
+                        invite_code: code,
+                    },
                 };
                 const updatedMemberIds = [...existingMemberIds, userId];
 

@@ -1,19 +1,95 @@
+import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
+import { HouseholdService } from '../services/HouseholdService';
 import { setAccounts } from '../store/accountsSlice';
+import { setHouseholdContext, setHouseholdMembers } from '../store/authSlice';
 import { setCategories } from '../store/categoriesSlice';
-import { setTransactions } from '../store/transactionsSlice';
 import { setInvestments } from '../store/investmentsSlice';
+import { setTransactions } from '../store/transactionsSlice';
+
+const ROLE_ORDER: Record<string, number> = {
+    leader: 0,
+    'co-leader': 1,
+    member: 2,
+};
 
 export default function GlobalSyncProvider({ children }: { children: React.ReactNode }) {
     const dispatch = useDispatch();
-    const { householdId } = useSelector((state: any) => state.auth);
+    const { user, householdId } = useSelector((state: any) => state.auth);
 
     useEffect(() => {
-        if (!householdId) return;
+        if (!householdId || !user?.uid) {
+            dispatch(setAccounts([]));
+            dispatch(setCategories([]));
+            dispatch(setTransactions([]));
+            dispatch(setInvestments([]));
+            dispatch(setHouseholdMembers([]));
+            return;
+        }
+
+        let didBackfillDisplayName = false;
+
+        // 0. Sync Household metadata, live member list, and live role/access for current user
+        const householdRef = doc(db, 'households', householdId);
+        const unsubscribeHousehold = onSnapshot(
+            householdRef,
+            (snapshot) => {
+                if (!snapshot.exists()) return;
+                const hhData = snapshot.data();
+                const membersMap = hhData.members || {};
+
+                const membersList = Object.entries(membersMap)
+                    .map(([uid, info]: [string, any]) => {
+                        const role = info?.role || 'member';
+                        const access =
+                            role === 'leader' || role === 'co-leader'
+                                ? 'read-write'
+                                : (info?.access || 'read-write');
+                        const displayName =
+                            info?.display_name ||
+                            (uid === user.uid && user.displayName ? user.displayName : 'Household Member');
+
+                        return {
+                            uid,
+                            displayName,
+                            role,
+                            access,
+                        };
+                    })
+                    .sort((a, b) => {
+                        const rankDiff = (ROLE_ORDER[a.role] ?? 3) - (ROLE_ORDER[b.role] ?? 3);
+                        if (rankDiff !== 0) return rankDiff;
+                        return a.displayName.localeCompare(b.displayName);
+                    });
+
+                dispatch(setHouseholdMembers(membersList));
+
+                const myEntry = membersMap[user.uid];
+                if (myEntry) {
+                    const myRole = myEntry.role || 'member';
+                    const myAccess =
+                        myRole === 'leader' || myRole === 'co-leader'
+                            ? 'read-write'
+                            : (myEntry.access || 'read-write');
+
+                    dispatch(setHouseholdContext({
+                        householdId,
+                        householdName: hhData.name || 'Household',
+                        householdRole: myRole,
+                        householdAccess: myAccess,
+                    }));
+
+                    if (!myEntry.display_name && user.displayName && !didBackfillDisplayName) {
+                        didBackfillDisplayName = true;
+                        HouseholdService.syncOwnDisplayName(householdId, user.uid, user.displayName);
+                    }
+                }
+            },
+            (error) => console.error('[SYNC_HOUSEHOLD_ERROR]:', error.message)
+        );
 
         // 1. Sync Accounts
         const accountsRef = collection(db, 'households', householdId, 'accounts');
@@ -50,8 +126,11 @@ export default function GlobalSyncProvider({ children }: { children: React.React
                     return {
                         id: doc.id,
                         ...data,
-                        // Serialize timestamp for Redux
-                        created_at: data.created_at?.toMillis ? data.created_at.toMillis() : Date.now()
+                        // Serialize timestamps for Redux
+                        created_at: data.created_at?.toMillis ? data.created_at.toMillis() : Date.now(),
+                        transaction_date: data.transaction_date?.toMillis
+                            ? data.transaction_date.toMillis()
+                            : (data.created_at?.toMillis ? data.created_at.toMillis() : Date.now()),
                     };
                 });
                 dispatch(setTransactions(transactionsData));
@@ -72,12 +151,13 @@ export default function GlobalSyncProvider({ children }: { children: React.React
 
         // Cleanup listeners when unmounting or changing households
         return () => {
+            unsubscribeHousehold();
             unsubscribeAccounts();
             unsubscribeCategories();
             unsubscribeTransactions();
             unsubscribeInvestments();
         };
-    }, [householdId, dispatch]);
+    }, [householdId, user?.uid, user?.displayName, dispatch]);
 
     // Wrap children, acts as a headless data fetcher
     return <>{children}</>;

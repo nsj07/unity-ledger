@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, Alert, TouchableOpacity, ActivityIndicator, SafeAreaView, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TextInput, Alert, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector, useDispatch } from 'react-redux';
 import { HouseholdService } from '../src/services/HouseholdService';
 import { InvitationService } from '../src/services/InvitationService';
@@ -46,7 +47,12 @@ export default function HouseholdOnboarding() {
 
         setSubmitting(true);
         dispatch(setLoading(true));
-        const response = await HouseholdService.createHousehold(user.uid, householdName.trim(), 'INR');
+        const response = await HouseholdService.createHousehold(
+            user.uid,
+            householdName.trim(),
+            'INR',
+            user.displayName || 'Leader'
+        );
 
         if (response.error) {
             dispatch(setLoading(false));
@@ -84,7 +90,11 @@ export default function HouseholdOnboarding() {
 
         setSubmitting(true);
         dispatch(setLoading(true));
-        const response = await InvitationService.redeemInvitation(user.uid, inviteCode);
+        const response = await InvitationService.redeemInvitation(
+            user.uid,
+            inviteCode,
+            user.displayName || 'Member'
+        );
 
         if (response.error || !response.success) {
             dispatch(setLoading(false));
@@ -111,7 +121,7 @@ export default function HouseholdOnboarding() {
     };
 
     return (
-        <SafeAreaView style={[styles.safeArea, isDark && styles.containerDark]}>
+        <SafeAreaView style={[styles.safeArea, isDark && styles.containerDark]} edges={['top', 'bottom']}>
             {householdId ? (
                 <View style={[styles.navBar, isDark && styles.navBarDark]}>
                     <TouchableOpacity
