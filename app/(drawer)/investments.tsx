@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, Button, TextInput, Alert, Modal, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, View, Text, FlatList, Button, TextInput, Alert, Modal } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { InvestmentService } from '../../src/services/InvestmentService';
 import { setInvestments, setLoading, setError } from '../../src/store/investmentsSlice';
@@ -14,13 +14,7 @@ export default function InvestmentsScreen() {
     const [newName, setNewName] = useState('');
     const [newPrincipal, setNewPrincipal] = useState('');
 
-    useEffect(() => {
-        if (householdId) {
-            loadInvestments();
-        }
-    }, [householdId]);
-
-    const loadInvestments = async () => {
+    const loadInvestments = useCallback(async () => {
         dispatch(setLoading(true));
         const response = await InvestmentService.getInvestments(householdId);
         dispatch(setLoading(false));
@@ -31,7 +25,13 @@ export default function InvestmentsScreen() {
         } else {
             dispatch(setInvestments(response.investments));
         }
-    };
+    }, [dispatch, householdId]);
+
+    useEffect(() => {
+        if (householdId) {
+            loadInvestments();
+        }
+    }, [householdId, loadInvestments]);
 
     const handleCreateInvestment = async () => {
         if (!newName || !newPrincipal) {
@@ -56,7 +56,7 @@ export default function InvestmentsScreen() {
         }
     };
 
-    const renderItem = ({ item }) => (
+    const renderItem = ({ item }: { item: any }) => (
         <View style={styles.card}>
             <Text style={styles.cardTitle}>{item.name}</Text>
             <View style={styles.metrics}>

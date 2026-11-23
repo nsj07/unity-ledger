@@ -4,7 +4,13 @@ import { Picker } from '@react-native-picker/picker';
 import { useSelector } from 'react-redux';
 import { TransactionService } from '../services/TransactionService';
 
-export default function TransactionForm({ householdId, onClose, onSuccess }) {
+interface TransactionFormProps {
+    householdId: string;
+    onClose: () => void;
+    onSuccess: () => void;
+}
+
+export default function TransactionForm({ householdId, onClose, onSuccess }: TransactionFormProps) {
     const { accounts } = useSelector((state: any) => state.accounts);
     const { categories } = useSelector((state: any) => state.categories);
     const { user } = useSelector((state: any) => state.auth);
@@ -15,16 +21,16 @@ export default function TransactionForm({ householdId, onClose, onSuccess }) {
     const [toAccountId, setToAccountId] = useState('');
 
     // Find Expense/Income categories based on selected type
-    const activeCategories = categories.filter(c => c.type === type);
+    const activeCategories = categories.filter((c: any) => c.type === type);
     const [categoryId, setCategoryId] = useState('');
     const [subcategoryName, setSubcategoryName] = useState('');
 
     const [loading, setLoading] = useState(false);
 
-    const activeCategoryObject = categories.find(c => c.id === categoryId);
+    const activeCategoryObject = categories.find((c: any) => c.id === categoryId);
 
     const handleSubmit = async () => {
-        if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+        if (!amount || Number.isNaN(Number(amount)) || parseFloat(amount) <= 0) {
             Alert.alert("Invalid Amount", "Please enter a valid number.");
             return;
         }
@@ -85,7 +91,7 @@ export default function TransactionForm({ householdId, onClose, onSuccess }) {
             <Text style={styles.label}>Source Account</Text>
             <Picker selectedValue={accountId} onValueChange={setAccountId} style={styles.picker}>
                 <Picker.Item label="Select Account..." value="" />
-                {accounts.map(acc => <Picker.Item key={acc.id} label={acc.name} value={acc.id} />)}
+                {accounts.map((acc: any) => <Picker.Item key={acc.id} label={acc.name} value={acc.id} />)}
             </Picker>
 
             {type === 'Transfer' ? (

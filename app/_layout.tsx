@@ -46,7 +46,7 @@ function RootLayoutNav() {
         router.replace('/');
       }
     }, 0);
-  }, [user, householdId, isLoading, segments]);
+  }, [user, householdId, isLoading, segments, router]);
 
   if (isLoading) {
     return (

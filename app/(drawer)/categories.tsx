@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, TextInput, Alert, Modal, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { CategoryService } from '../../src/services/CategoryService';
@@ -29,13 +29,7 @@ export default function CategoriesScreen() {
 
     const CATEGORY_TYPES = ['Expense', 'Income', 'Transfer', 'Investment'];
 
-    useEffect(() => {
-        if (householdId) {
-            loadCategories();
-        }
-    }, [householdId]);
-
-    const loadCategories = async () => {
+    const loadCategories = useCallback(async () => {
         dispatch(setLoading(true));
         const response = await CategoryService.getCategories(householdId);
         dispatch(setLoading(false));
@@ -46,7 +40,13 @@ export default function CategoriesScreen() {
         } else {
             dispatch(setCategories(response.categories));
         }
-    };
+    }, [dispatch, householdId]);
+
+    useEffect(() => {
+        if (householdId) {
+            loadCategories();
+        }
+    }, [householdId, loadCategories]);
 
     const openAddModal = () => {
         setIsEditing(false);

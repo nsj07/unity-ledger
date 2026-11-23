@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, Button, TextInput, Alert, Modal, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, View, Text, FlatList, Button, TextInput, Alert, Modal } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { AccountService } from '../../src/services/AccountService';
 import { setAccounts, setLoading, setError } from '../../src/store/accountsSlice';
@@ -12,16 +12,10 @@ export default function AccountsScreen() {
 
     const [modalVisible, setModalVisible] = useState(false);
     const [newAccountName, setNewAccountName] = useState('');
-    const [newAccountType, setNewAccountType] = useState('Savings'); // Default
+    const [newAccountType] = useState('Savings'); // Default
     const [newAccountBalance, setNewAccountBalance] = useState('');
 
-    useEffect(() => {
-        if (householdId) {
-            loadAccounts();
-        }
-    }, [householdId]);
-
-    const loadAccounts = async () => {
+    const loadAccounts = useCallback(async () => {
         dispatch(setLoading(true));
         const response = await AccountService.getAccounts(householdId);
         dispatch(setLoading(false));
@@ -32,7 +26,13 @@ export default function AccountsScreen() {
         } else {
             dispatch(setAccounts(response.accounts));
         }
-    };
+    }, [dispatch, householdId]);
+
+    useEffect(() => {
+        if (householdId) {
+            loadAccounts();
+        }
+    }, [householdId, loadAccounts]);
 
     const handleAddAccount = async () => {
         if (!newAccountName || !newAccountBalance) {
@@ -57,7 +57,7 @@ export default function AccountsScreen() {
         }
     };
 
-    const renderItem = ({ item }) => (
+    const renderItem = ({ item }: { item: any }) => (
         <View style={styles.card}>
             <Text style={styles.cardTitle}>{item.name} ({item.type})</Text>
             <Text style={styles.amount}>Balance: {item.balance}</Text>

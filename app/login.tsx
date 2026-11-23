@@ -73,7 +73,7 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity onPress={() => router.push('/signup')} style={styles.outlineButton}>
-                <Text style={[styles.outlineButtonText, isDark && styles.textDark]}>Don't have an account? Sign Up</Text>
+                <Text style={[styles.outlineButtonText, isDark && styles.textDark]}>Don&apos;t have an account? Sign Up</Text>
             </TouchableOpacity>
         </View>
     );
