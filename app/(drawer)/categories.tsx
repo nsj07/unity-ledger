@@ -1,11 +1,29 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, TextInput, Alert, Modal, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    Alert,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    SectionList,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
+import VoiceAiSettingsSection from '@/src/components/voice/VoiceAiSettingsSection';
+import { selectIsVoiceEntryReadyAndEnabled } from '@/src/store/voiceAiSlice';
 import { CategoryService } from '../../src/services/CategoryService';
 import { setCategories, setLoading, setError } from '../../src/store/categoriesSlice';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { createStyles } from './categories.styles';
+
+const CATEGORY_TYPES = ['Expense', 'Income', 'Transfer', 'Investment'] as const;
+type FilterType = 'All' | (typeof CATEGORY_TYPES)[number];
+const FILTER_TABS: FilterType[] = ['All', ...CATEGORY_TYPES];
 
 export default function CategoriesScreen() {
     const colorScheme = useColorScheme();
@@ -13,8 +31,18 @@ export default function CategoriesScreen() {
 
     const { householdId, householdRole, householdAccess } = useSelector((state: any) => state.auth);
     const { categories, isLoading } = useSelector((state: any) => state.categories);
+    const isVoiceReadyAndEnabled = useSelector(selectIsVoiceEntryReadyAndEnabled);
     const isReadOnly = householdRole !== 'leader' && householdRole !== 'co-leader' && householdAccess === 'read-only';
     const dispatch = useDispatch();
+    const { tab } = useLocalSearchParams<{ tab?: string }>();
+
+    const [manualSection, setManualSection] = useState<'categories' | 'voice' | null>(null);
+    const settingsSection: 'categories' | 'voice' =
+        manualSection ?? (tab === 'voice' ? 'voice' : 'categories');
+    const setSettingsSection = (next: 'categories' | 'voice') => setManualSection(next);
+
+    // Filter State
+    const [activeFilter, setActiveFilter] = useState<FilterType>('All');
 
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
@@ -26,8 +54,6 @@ export default function CategoriesScreen() {
     const [newCatType, setNewCatType] = useState('Expense');
     const [subcategories, setSubcategories] = useState<string[]>([]);
     const [subCatInput, setSubCatInput] = useState('');
-
-    const CATEGORY_TYPES = ['Expense', 'Income', 'Transfer', 'Investment'];
 
     const loadCategories = useCallback(async () => {
         dispatch(setLoading(true));
@@ -52,7 +78,7 @@ export default function CategoriesScreen() {
         setIsEditing(false);
         setEditCatId(null);
         setNewCatName('');
-        setNewCatType('Expense');
+        setNewCatType(activeFilter === 'All' ? 'Expense' : activeFilter);
         setSubcategories([]);
         setSubCatInput('');
         setModalVisible(true);
@@ -107,6 +133,23 @@ export default function CategoriesScreen() {
     };
 
     const handleDeleteCategory = (id: string, name: string) => {
+        const runDelete = async () => {
+            const response = await CategoryService.deleteCategory(householdId, id);
+            if (!response.error) {
+                loadCategories();
+                setModalVisible(false);
+            } else {
+                Alert.alert("Error", response.error);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(`Delete '${name}'? Existing transactions will retain the name but lose category mapping.`)) {
+                runDelete();
+            }
+            return;
+        }
+
         Alert.alert(
             "Delete Category",
             `Are you sure you want to delete '${name}'? Existing transactions will retain the name but lose category mapping.`,
@@ -115,15 +158,7 @@ export default function CategoriesScreen() {
                 {
                     text: "Delete",
                     style: "destructive",
-                    onPress: async () => {
-                        const response = await CategoryService.deleteCategory(householdId, id);
-                        if (!response.error) {
-                            loadCategories();
-                            setModalVisible(false);
-                        } else {
-                            Alert.alert("Error", response.error);
-                        }
-                    }
+                    onPress: runDelete
                 }
             ]
         );
@@ -138,6 +173,50 @@ export default function CategoriesScreen() {
             default: return '#6B7280';
         }
     };
+
+    const typeCounts = useMemo(() => {
+        const counts: Record<string, number> = { All: (categories || []).length };
+        CATEGORY_TYPES.forEach((t) => {
+            counts[t] = 0;
+        });
+        (categories || []).forEach((cat: any) => {
+            const t = cat.type || 'Other';
+            counts[t] = (counts[t] || 0) + 1;
+        });
+        return counts;
+    }, [categories]);
+
+    const sections = useMemo(() => {
+        const list = categories || [];
+        const typesToShow =
+            activeFilter === 'All' ? [...CATEGORY_TYPES] : [activeFilter];
+
+        const grouped: { title: string; color: string; data: any[] }[] = typesToShow
+            .map((type) => ({
+                title: type as string,
+                color: getTypeColor(type),
+                data: list
+                    .filter((c: any) => c.type === type)
+                    .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')),
+            }))
+            .filter((section) => section.data.length > 0);
+
+        if (activeFilter === 'All') {
+            const knownTypes = new Set<string>(CATEGORY_TYPES);
+            const others = list
+                .filter((c: any) => !knownTypes.has(c.type))
+                .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+            if (others.length > 0) {
+                grouped.push({
+                    title: 'Other',
+                    color: '#6B7280',
+                    data: others,
+                });
+            }
+        }
+
+        return grouped;
+    }, [categories, activeFilter]);
 
     const renderItem = ({ item }: { item: any }) => (
         <View style={styles.card}>
@@ -175,8 +254,10 @@ export default function CategoriesScreen() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.headerRow}>
-                <Text style={styles.title}>Categories</Text>
-                {!isReadOnly ? (
+                <Text style={styles.title}>
+                    {settingsSection === 'categories' ? 'Categories' : 'Voice & Local AI'}
+                </Text>
+                {settingsSection === 'categories' && !isReadOnly ? (
                     <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
                         <IconSymbol name="plus" size={18} color="#FFF" />
                         <Text style={styles.addButtonText}>New</Text>
@@ -184,16 +265,161 @@ export default function CategoriesScreen() {
                 ) : null}
             </View>
 
+            {/* Settings Top Section Switcher */}
+            <View style={styles.settingsTabsBar}>
+                <TouchableOpacity
+                    style={[
+                        styles.settingsTabBtn,
+                        settingsSection === 'categories' && styles.settingsTabBtnActive,
+                    ]}
+                    onPress={() => setSettingsSection('categories')}
+                    activeOpacity={0.8}
+                >
+                    <IconSymbol
+                        name="tag.fill"
+                        size={16}
+                        color={settingsSection === 'categories' ? '#3B82F6' : '#6B7280'}
+                    />
+                    <Text
+                        style={[
+                            styles.settingsTabText,
+                            settingsSection === 'categories' && styles.settingsTabTextActive,
+                        ]}
+                    >
+                        Categories
+                    </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[
+                        styles.settingsTabBtn,
+                        settingsSection === 'voice' && styles.settingsTabBtnActive,
+                    ]}
+                    onPress={() => setSettingsSection('voice')}
+                    activeOpacity={0.8}
+                >
+                    <IconSymbol
+                        name="mic.fill"
+                        size={16}
+                        color={settingsSection === 'voice' ? '#3B82F6' : '#6B7280'}
+                    />
+                    <Text
+                        style={[
+                            styles.settingsTabText,
+                            settingsSection === 'voice' && styles.settingsTabTextActive,
+                        ]}
+                    >
+                        Voice & Local AI
+                    </Text>
+                    {isVoiceReadyAndEnabled ? <View style={styles.voiceReadyDot} /> : null}
+                </TouchableOpacity>
+            </View>
+
+            {settingsSection === 'voice' ? (
+                <VoiceAiSettingsSection />
+            ) : (
+                <>
+                    {/* Type Filter Tabs */}
+                    <View style={styles.filterBarWrapper}>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.filterBar}
+                >
+                    {FILTER_TABS.map((tab) => {
+                        const isActive = activeFilter === tab;
+                        const accentColor = tab === 'All' ? '#3B82F6' : getTypeColor(tab);
+                        const count = typeCounts[tab] || 0;
+                        return (
+                            <TouchableOpacity
+                                key={tab}
+                                style={[
+                                    styles.filterChip,
+                                    isActive && {
+                                        backgroundColor: accentColor,
+                                        borderColor: accentColor,
+                                    },
+                                ]}
+                                onPress={() => setActiveFilter(tab)}
+                                activeOpacity={0.75}
+                            >
+                                <Text
+                                    style={[
+                                        styles.filterChipText,
+                                        isActive && styles.filterChipTextActive,
+                                    ]}
+                                >
+                                    {tab}
+                                </Text>
+                                <View
+                                    style={[
+                                        styles.filterCountBadge,
+                                        isActive && styles.filterCountBadgeActive,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.filterCountText,
+                                            isActive && styles.filterCountTextActive,
+                                        ]}
+                                    >
+                                        {count}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            </View>
+
             {isLoading ? (
                 <Text style={styles.loading}>Loading configurations...</Text>
             ) : (
-                <FlatList
-                    data={categories}
+                <SectionList
+                    sections={sections}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}
+                    renderSectionHeader={({ section }) => (
+                        <View style={styles.sectionHeader}>
+                            <View style={styles.sectionHeaderLeft}>
+                                <View
+                                    style={[
+                                        styles.sectionDot,
+                                        { backgroundColor: section.color },
+                                    ]}
+                                />
+                                <Text style={styles.sectionTitle}>{section.title}</Text>
+                            </View>
+                            <View
+                                style={[
+                                    styles.sectionCountPill,
+                                    { backgroundColor: section.color + '20' },
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.sectionCountText,
+                                        { color: section.color },
+                                    ]}
+                                >
+                                    {section.data.length}{' '}
+                                    {section.data.length === 1 ? 'category' : 'categories'}
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+                    stickySectionHeadersEnabled={false}
                     contentContainerStyle={{ paddingBottom: 40 }}
-                    ListEmptyComponent={<Text style={styles.emptyText}>No categories configured.</Text>}
+                    ListEmptyComponent={
+                        <Text style={styles.emptyText}>
+                            {activeFilter === 'All'
+                                ? 'No categories configured.'
+                                : `No ${activeFilter} categories configured yet.`}
+                        </Text>
+                    }
                 />
+            )}
+                </>
             )}
 
             {/* Editor Modal */}

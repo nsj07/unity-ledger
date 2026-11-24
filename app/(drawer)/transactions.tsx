@@ -1,6 +1,8 @@
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import VoiceTransactionFlowModal from '@/src/components/voice/VoiceTransactionFlowModal';
 import { TransactionService } from '@/src/services/TransactionService';
+import { selectIsVoiceEntryReadyAndEnabled } from '@/src/store/voiceAiSlice';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
@@ -70,6 +72,8 @@ export default function TransactionsScreen() {
     const [selectedYear, setSelectedYear] = useState(currentYear);
     const [selectedMonth, setSelectedMonth] = useState(currentMonth);
     const [showMonthPicker, setShowMonthPicker] = useState(false);
+    const [showVoiceModal, setShowVoiceModal] = useState(false);
+    const isVoiceAvailable = useSelector(selectIsVoiceEntryReadyAndEnabled);
 
     const isAtCurrentMonth = selectedYear === currentYear && selectedMonth === currentMonth;
 
@@ -302,9 +306,24 @@ export default function TransactionsScreen() {
             <View style={styles.headerContainer}>
                 <Text style={styles.headerTitle}>Transactions</Text>
                 {!isReadOnly ? (
-                    <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
-                        <IconSymbol name="plus" size={24} color="#FFF" />
-                    </TouchableOpacity>
+                    <View style={styles.headerActionsRow}>
+                        {isVoiceAvailable ? (
+                            <TouchableOpacity
+                                style={styles.voiceButton}
+                                onPress={() => setShowVoiceModal(true)}
+                                accessibilityLabel="Add transaction by voice"
+                            >
+                                <IconSymbol
+                                    name="mic.fill"
+                                    size={20}
+                                    color={colorScheme === 'dark' ? '#93C5FD' : '#2563EB'}
+                                />
+                            </TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
+                            <IconSymbol name="plus" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
                 ) : null}
             </View>
 
@@ -469,6 +488,13 @@ export default function TransactionsScreen() {
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+            {!isReadOnly && isVoiceAvailable ? (
+                <VoiceTransactionFlowModal
+                    visible={showVoiceModal}
+                    onClose={() => setShowVoiceModal(false)}
+                />
+            ) : null}
         </SafeAreaView>
     );
 }

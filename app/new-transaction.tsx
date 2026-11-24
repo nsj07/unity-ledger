@@ -21,7 +21,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import BottomPickerSheet, { BottomPickerItem } from '@/src/components/BottomPickerSheet';
 import CategoryPickerSheet from '@/src/components/CategoryPickerSheet';
 import DatePickerSheet from '@/src/components/DatePickerSheet';
+import VoiceTransactionFlowModal from '@/src/components/voice/VoiceTransactionFlowModal';
 import { TransactionService } from '@/src/services/TransactionService';
+import { selectIsVoiceEntryReadyAndEnabled } from '@/src/store/voiceAiSlice';
 import { createStyles } from './new-transaction.styles';
 
 export type TransactionType = 'Expense' | 'Income' | 'Transfer';
@@ -108,6 +110,8 @@ export default function NewTransactionScreen() {
     const [showDestSheet, setShowDestSheet] = useState(false);
     const [showCategorySheet, setShowCategorySheet] = useState(false);
     const [showDateSheet, setShowDateSheet] = useState(false);
+    const [showVoiceModal, setShowVoiceModal] = useState(false);
+    const isVoiceAvailable = useSelector(selectIsVoiceEntryReadyAndEnabled);
 
     const scrollViewRef = useRef<ComponentRef<typeof ScrollView>>(null);
     const isNoteFocusedRef = useRef(false);
@@ -259,7 +263,23 @@ export default function NewTransactionScreen() {
                 <Text style={styles.headerTitle}>
                     {isEditMode ? 'Edit Transaction' : 'New Transaction'}
                 </Text>
-                <View style={styles.headerSpacer} />
+                {!isEditMode && isVoiceAvailable ? (
+                    <TouchableOpacity
+                        style={styles.voiceHeaderBtn}
+                        onPress={() => setShowVoiceModal(true)}
+                        disabled={saving}
+                        activeOpacity={0.8}
+                    >
+                        <IconSymbol
+                            name="mic.fill"
+                            size={15}
+                            color={isDark ? '#93C5FD' : '#2563EB'}
+                        />
+                        <Text style={styles.voiceHeaderBtnText}>Voice</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <View style={styles.headerSpacer} />
+                )}
             </View>
 
             <KeyboardAvoidingView
@@ -600,6 +620,14 @@ export default function NewTransactionScreen() {
                 onSelect={(date) => setTransactionDate(date)}
                 onClose={() => setShowDateSheet(false)}
             />
+
+            {!isEditMode && isVoiceAvailable ? (
+                <VoiceTransactionFlowModal
+                    visible={showVoiceModal}
+                    onClose={() => setShowVoiceModal(false)}
+                    onTransactionSaved={navigateBack}
+                />
+            ) : null}
         </View>
     );
 }

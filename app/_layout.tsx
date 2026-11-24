@@ -9,6 +9,7 @@ import 'react-native-reanimated';
 import { store } from '../src/store';
 import { AuthProvider } from '../src/components/AuthProvider';
 import GlobalSyncProvider from '../src/components/GlobalSyncProvider';
+import VoiceAiProvider from '../src/components/VoiceAiProvider';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -80,7 +81,9 @@ export default function RootLayout() {
       <ReduxProvider store={store}>
         <AuthProvider>
           <GlobalSyncProvider>
-            <RootLayoutNav />
+            <VoiceAiProvider>
+              <RootLayoutNav />
+            </VoiceAiProvider>
           </GlobalSyncProvider>
         </AuthProvider>
       </ReduxProvider>

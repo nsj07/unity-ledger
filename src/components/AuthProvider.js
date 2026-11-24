@@ -17,6 +17,15 @@ export const AuthProvider = ({ children }) => {
 
             try {
                 if (firebaseUser) {
+                    // Enforce allowlist before hydrating any app state
+                    const isAllowed = await AuthService.isEmailAllowed(firebaseUser.email);
+                    if (!isAllowed) {
+                        console.warn('[AUTH_PROVIDER]: Access denied for non-allowlisted email:', firebaseUser.email);
+                        await AuthService.logoutUser();
+                        dispatch(clearAuth());
+                        return;
+                    }
+
                     // User logged in (initial Auth snapshot; displayName may still be updating during email/password signup)
                     dispatch(setUser({
                         uid: firebaseUser.uid,

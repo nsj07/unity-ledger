@@ -3,7 +3,38 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { Platform } from 'react-native';
 import { auth, db } from '../config/firebase';
 
+const ACCESS_DENIED_MESSAGE =
+    'Access is restricted to invited users only. Please contact the administrator to request access.';
+
+const STATIC_ALLOWED_EMAILS = new Set([
+    'nagula.1999@gmail.com',
+    'testera@xyz.com',
+    'testerb@xyz.com',
+    'testerc@xyz.com',
+    'testerd@xyz.com',
+    'testere@xyz.com',
+    'testerf@xyz.com',
+    'testerg@xyz.com',
+    'testerh@xyz.com',
+    'testeri@xyz.com',
+    'testerj@xyz.com',
+]);
+
 export const AuthService = {
+    // Check whether an authenticated user's email is in the static allowlist or Firestore allowed_users collection
+    isEmailAllowed: async (email) => {
+        try {
+            const normalized = (email || '').trim().toLowerCase();
+            if (!normalized) return false;
+            if (STATIC_ALLOWED_EMAILS.has(normalized)) return true;
+            const allowDoc = await getDoc(doc(db, 'allowed_users', normalized));
+            return allowDoc.exists();
+        } catch (error) {
+            console.warn('ALLOWLIST_CHECK_ERROR:', error?.message || error);
+            return false;
+        }
+    },
+
     // Register a new user
     registerUser: async (email, password, displayName) => {
         try {
@@ -11,6 +42,16 @@ export const AuthService = {
             const cleanName = displayName.trim();
             const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
             const user = userCredential.user;
+
+            const allowed = await AuthService.isEmailAllowed(user.email || cleanEmail);
+            if (!allowed) {
+                try {
+                    await user.delete();
+                } catch {
+                    await signOut(auth);
+                }
+                return { user: null, error: ACCESS_DENIED_MESSAGE };
+            }
 
             await updateProfile(user, { displayName: cleanName });
 
@@ -53,6 +94,11 @@ export const AuthService = {
     loginUser: async (email, password) => {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+            const allowed = await AuthService.isEmailAllowed(userCredential.user.email || email);
+            if (!allowed) {
+                await signOut(auth);
+                return { user: null, error: ACCESS_DENIED_MESSAGE };
+            }
             return { user: userCredential.user, error: null };
         } catch (error) {
             console.error("LOGIN_USER_ERROR:", error);
@@ -83,6 +129,12 @@ export const AuthService = {
             const provider = new GoogleAuthProvider();
             const userCredential = await signInWithPopup(auth, provider);
             const user = userCredential.user;
+
+            const allowed = await AuthService.isEmailAllowed(user.email);
+            if (!allowed) {
+                await signOut(auth);
+                return { user: null, error: ACCESS_DENIED_MESSAGE };
+            }
 
             // Check if user document exists, if not, create it (acts as sign up too)
             const userDocRef = doc(db, 'users', user.uid);

@@ -23,6 +23,21 @@ export const createStyles = (colorScheme: 'light' | 'dark' | null | undefined) =
             fontWeight: '800',
             color: isDark ? '#F9FAFB' : '#111827',
         },
+        headerActionsRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+        },
+        voiceButton: {
+            backgroundColor: isDark ? '#374151' : '#EFF6FF',
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            justifyContent: 'center',
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: isDark ? '#4B5563' : '#BFDBFE',
+        },
         addButton: {
             backgroundColor: '#3B82F6',
             width: 44,

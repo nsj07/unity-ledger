@@ -6,6 +6,16 @@ rules_version = '2';
 //
 // This security rules file assumes the following Firestore structure:
 //
+// 0. Collection: allowed_users
+//    Document ID: {email} (lowercase email address, e.g. "user@example.com")
+//    Strictly admin-managed allowlist (via Firebase Console or Admin SDK).
+//    Authenticated users may ONLY `get` their own lowercase email document to verify
+//    access; listing and all client-side writes are denied. Access to all other
+//    collections requires the authenticated user's lowercase email to be in the
+//    static allowlist (`isStaticAllowedEmail`) OR exist in this collection.
+//    Fields:
+//      - (optional admin metadata, e.g., added_at, note; document existence grants access)
+//
 // 1. Collection: users
 //    Document ID: {userId} (matches Firebase Auth UID)
 //    Contains PII (email, display_name) -> STRICTLY owner-readable only.
@@ -100,9 +110,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Check if the authenticated user owns the resource by userId
+    // Check if a lowercase email is in the static allowlist
+    function isStaticAllowedEmail(email) {
+      return email is string && email in [
+        'nagula.1999@gmail.com',
+        'testera@xyz.com',
+        'testerb@xyz.com',
+        'testerc@xyz.com',
+        'testerd@xyz.com',
+        'testere@xyz.com',
+        'testerf@xyz.com',
+        'testerg@xyz.com',
+        'testerh@xyz.com',
+        'testeri@xyz.com',
+        'testerj@xyz.com'
+      ];
+    }
+
+    // Check if the authenticated user's email is in the static allowlist OR the admin-managed allowed_users collection
+    function isAllowedUser() {
+      return isAuthenticated() &&
+             'email' in request.auth.token &&
+             request.auth.token.email is string &&
+             (
+               isStaticAllowedEmail(request.auth.token.email.lower()) ||
+               exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email.lower()))
+             );
+    }
+
+    // Check if the authenticated, allowlisted user owns the resource by userId
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isAllowedUser() && request.auth.uid == userId;
     }
 
     // Verify uid field hasn't been tampered with on create (if present)
@@ -177,16 +215,16 @@ service cloud.firestore {
              ('members' in hhData && hhData.members is map && request.auth.uid in hhData.members);
     }
 
-    // Check whether a household exists and the authenticated user is a member
+    // Check whether a household exists and the authenticated, allowlisted user is a member
     function isHouseholdMember(householdId) {
-      return isAuthenticated() &&
+      return isAllowedUser() &&
              exists(/databases/$(database)/documents/households/$(householdId)) &&
              isMemberOfHouseholdData(get(/databases/$(database)/documents/households/$(householdId)).data);
     }
 
-    // Check whether a household exists and the authenticated user is NOT a member
+    // Check whether a household exists and the authenticated, allowlisted user is NOT a member
     function isNonMemberOfExistingHousehold(householdId) {
-      return isAuthenticated() &&
+      return isAllowedUser() &&
              isNonEmptyString(householdId, 128) &&
              exists(/databases/$(database)/documents/households/$(householdId)) &&
              !isMemberOfHouseholdData(get(/databases/$(database)/documents/households/$(householdId)).data);
@@ -205,18 +243,18 @@ service cloud.firestore {
               (hhData.memberIds is list && request.auth.uid in hhData.memberIds));
     }
 
-    // Check whether a household exists and the authenticated user is a leader or co-leader
+    // Check whether a household exists and the authenticated, allowlisted user is a leader or co-leader
     function isLeaderOfHousehold(householdId) {
-      return isAuthenticated() &&
+      return isAllowedUser() &&
              isNonEmptyString(householdId, 128) &&
              exists(/databases/$(database)/documents/households/$(householdId)) &&
              isLeaderOfHouseholdData(get(/databases/$(database)/documents/households/$(householdId)).data);
     }
 
-    // Check whether the authenticated user is a leader or co-leader of the current household document
+    // Check whether the authenticated, allowlisted user is a leader or co-leader of the current household document
     // (Supports legacy households that only have the `members` map without `memberIds`)
     function isHouseholdLeader() {
-      return isAuthenticated() && isLeaderOfHouseholdData(resource.data);
+      return isAllowedUser() && isLeaderOfHouseholdData(resource.data);
     }
 
     // Check whether the authenticated user has write access in household document data
@@ -236,9 +274,9 @@ service cloud.firestore {
              );
     }
 
-    // Check whether a household exists and the authenticated user is allowed to write subcollection data
+    // Check whether a household exists and the authenticated, allowlisted user is allowed to write subcollection data
     function canWriteHouseholdData(householdId) {
-      return isAuthenticated() &&
+      return isAllowedUser() &&
              isNonEmptyString(householdId, 128) &&
              exists(/databases/$(database)/documents/households/$(householdId)) &&
              canWriteHouseholdDataDoc(get(/databases/$(database)/documents/households/$(householdId)).data);
@@ -554,6 +592,17 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
+    // Email allowlist collection (strictly admin-managed via Firebase Console / Admin SDK)
+    match /allowed_users/{email} {
+      // A signed-in user may ONLY check their own lowercase email allowlist entry;
+      // prevents probing or enumerating other emails.
+      allow get: if isAuthenticated() &&
+                    'email' in request.auth.token &&
+                    request.auth.token.email is string &&
+                    request.auth.token.email.lower() == email;
+      allow list, create, update, delete: if false;
+    }
+
     // Users collection (contains PII: email, display_name)
     match /users/{userId} {
       // Strictly owner-only read to prevent PII exposure
@@ -577,18 +626,18 @@ service cloud.firestore {
 
     // Households collection
     match /households/{householdId} {
-      // Single-doc get allowed for authenticated users so invitees holding the exact householdId
+      // Single-doc get allowed for allowlisted users so invitees holding the exact householdId
       // can look up the household in joinHousehold(); collection listing is strictly restricted
       // to households the user belongs to (supports getUserHouseholds array-contains query).
-      allow get: if isAuthenticated();
-      allow list: if isAuthenticated() &&
+      allow get: if isAllowedUser();
+      allow list: if isAllowedUser() &&
                      (request.auth.uid in resource.data.memberIds ||
                       ('members' in resource.data &&
                        resource.data.members is map &&
                        request.auth.uid in resource.data.members));
 
-      // Any authenticated user can create a new household with themselves as the sole 'leader'
-      allow create: if isAuthenticated() &&
+      // Any allowlisted user can create a new household with themselves as the sole 'leader'
+      allow create: if isAllowedUser() &&
                        isValidHouseholdCreate(request.resource.data, householdId);
 
       // Updates allowed ONLY for:
@@ -597,7 +646,7 @@ service cloud.firestore {
       // 2) An existing 'leader' or 'co-leader' updating household name or currency_default
       // 3) An existing 'leader' or 'co-leader' updating role/access of a single other non-leader member
       // 4) An existing member backfilling/updating only their own display_name in members[uid]
-      allow update: if isAuthenticated() &&
+      allow update: if isAllowedUser() &&
                        areImmutableFieldsUnchanged(['id', 'created_at']) &&
                        isValidHousehold(request.resource.data, householdId) &&
                        (
@@ -655,17 +704,17 @@ service cloud.firestore {
 
     // Invitations collection (one-time, expiring household join codes)
     match /invitations/{inviteCode} {
-      // Allow lookup by exact invite code only; strictly block listing/scraping codes
-      allow get: if isAuthenticated();
+      // Allow lookup by exact invite code only for allowlisted users; strictly block listing/scraping codes
+      allow get: if isAllowedUser();
       allow list: if false;
 
-      // Only an authenticated leader or co-leader of the target household may create an active, expiring invite
-      allow create: if isAuthenticated() &&
+      // Only an allowlisted leader or co-leader of the target household may create an active, expiring invite
+      allow create: if isAllowedUser() &&
                        isValidInvitationCreate(request.resource.data, inviteCode) &&
                        isLeaderOfHousehold(request.resource.data.household_id);
 
-      // Only an authenticated non-member of the target household may redeem an active, unexpired invite
-      allow update: if isAuthenticated() &&
+      // Only an allowlisted non-member of the target household may redeem an active, unexpired invite
+      allow update: if isAllowedUser() &&
                        resource.data.status == 'active' &&
                        resource.data.used_by == null &&
                        resource.data.used_at == null &&

@@ -4,6 +4,7 @@ import accountsReducer from './accountsSlice';
 import categoriesReducer from './categoriesSlice';
 import transactionsReducer from './transactionsSlice';
 import investmentsReducer from './investmentsSlice';
+import voiceAiReducer from './voiceAiSlice';
 
 // We'll import reducers here as we build them, e.g. for user context, themes, etc.
 
@@ -14,6 +15,7 @@ export const store = configureStore({
         categories: categoriesReducer,
         transactions: transactionsReducer,
         investments: investmentsReducer,
+        voiceAi: voiceAiReducer,
     },
     // Adding middleware here if needed
 });

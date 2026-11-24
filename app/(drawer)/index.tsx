@@ -1,6 +1,8 @@
 import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import InviteModal from '@/src/components/InviteModal';
 import MemberControlModal, { HouseholdMemberItem } from '@/src/components/MemberControlModal';
+import VoiceTransactionFlowModal from '@/src/components/voice/VoiceTransactionFlowModal';
+import { selectIsVoiceEntryReadyAndEnabled } from '@/src/store/voiceAiSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -16,7 +18,9 @@ export default function DashboardScreen() {
   const { transactions } = useSelector((state: any) => state.transactions);
 
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState<HouseholdMemberItem | null>(null);
+  const isVoiceAvailable = useSelector(selectIsVoiceEntryReadyAndEnabled);
 
   const isLeaderOrCoLeader = householdRole === 'leader' || householdRole === 'co-leader';
   const isReadOnly = !isLeaderOrCoLeader && householdAccess === 'read-only';
@@ -203,7 +207,18 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Action Button (hidden for Read-Only members) */}
+      {/* Floating Action Buttons (hidden for Read-Only members; Voice button strictly gated) */}
+      {!isReadOnly && isVoiceAvailable ? (
+        <TouchableOpacity
+          style={styles.voiceFab}
+          onPress={() => setShowVoiceModal(true)}
+          activeOpacity={0.85}
+          accessibilityLabel="Add transaction by voice"
+        >
+          <IconSymbol name="mic.fill" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+      ) : null}
+
       {!isReadOnly ? (
         <TouchableOpacity
           style={styles.fab}
@@ -212,6 +227,13 @@ export default function DashboardScreen() {
         >
           <IconSymbol name="plus" size={28} color="#FFFFFF" />
         </TouchableOpacity>
+      ) : null}
+
+      {!isReadOnly && isVoiceAvailable ? (
+        <VoiceTransactionFlowModal
+          visible={showVoiceModal}
+          onClose={() => setShowVoiceModal(false)}
+        />
       ) : null}
 
       {/* Leader / Co-Leader Invite Popup */}

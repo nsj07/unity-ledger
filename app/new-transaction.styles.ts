@@ -32,6 +32,22 @@ export const createStyles = (isDark: boolean) =>
         headerSpacer: {
             width: 40,
         },
+        voiceHeaderBtn: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 18,
+            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
+            borderWidth: 1,
+            borderColor: isDark ? '#3B82F6' : '#BFDBFE',
+        },
+        voiceHeaderBtnText: {
+            fontSize: 12,
+            fontWeight: '700',
+            color: isDark ? '#93C5FD' : '#2563EB',
+        },
         scrollView: {
             flex: 1,
         },

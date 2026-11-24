@@ -1,6 +1,6 @@
 import { Drawer } from 'expo-router/drawer';
-import { useState } from 'react';
-import { Platform, Pressable, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
@@ -15,6 +15,124 @@ export default function DrawerLayout() {
   const insets = useSafeAreaInsets();
   const { user, householdName } = useSelector((state: any) => state.auth);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelScheduledClose = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const scheduleCloseDrawer = (nav: { closeDrawer: () => void }, delayMs = 150) => {
+    cancelScheduledClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      nav.closeDrawer();
+    }, delayMs);
+  };
+
+  useEffect(() => {
+    return () => cancelScheduledClose();
+  }, []);
+
+  const isMousePointer = (event: any) => {
+    const pointerType = event?.nativeEvent?.pointerType ?? event?.pointerType;
+    return !pointerType || pointerType === 'mouse';
+  };
+
+  const renderDrawerContent = (props: any) => {
+    const { state, descriptors, navigation } = props;
+    const focusedRoute = state.routes[state.index];
+    const focusedOptions = descriptors[focusedRoute?.key]?.options || {};
+    const activeTint = focusedOptions.drawerActiveTintColor || (isDark ? '#60A5FA' : '#2563EB');
+    const inactiveTint = focusedOptions.drawerInactiveTintColor || (isDark ? '#E5E7EB' : '#374151');
+    const activeBg =
+      focusedOptions.drawerActiveBackgroundColor ||
+      (isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF');
+
+    const content = (
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 16,
+          paddingHorizontal: 12,
+          gap: 4,
+        }}
+      >
+        {state.routes.map((route: any, index: number) => {
+          const isFocused = index === state.index;
+          const { options } = descriptors[route.key];
+          const label =
+            typeof options.drawerLabel === 'string'
+              ? options.drawerLabel
+              : options.title ?? route.name;
+          const color = isFocused ? activeTint : inactiveTint;
+          const hoverBg = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F3F4F6';
+
+          return (
+            <Pressable
+              key={route.key}
+              style={(pressState: any) => [
+                styles.drawerItem,
+                isFocused
+                  ? { backgroundColor: activeBg }
+                  : pressState.hovered
+                    ? { backgroundColor: hoverBg }
+                    : null,
+                pressState.pressed && { opacity: 0.85 },
+              ]}
+              onPress={() => {
+                cancelScheduledClose();
+                navigation.navigate(route.name);
+                navigation.closeDrawer();
+              }}
+            >
+              {(pressState: any) => {
+                const itemColor =
+                  isFocused || pressState.hovered
+                    ? isFocused
+                      ? activeTint
+                      : isDark
+                        ? '#FFFFFF'
+                        : '#111827'
+                    : color;
+                return (
+                  <>
+                    {options.drawerIcon
+                      ? options.drawerIcon({ color: itemColor, focused: isFocused, size: 24 })
+                      : null}
+                    <Text style={[styles.drawerItemLabel, { color: itemColor }]} numberOfLines={1}>
+                      {label}
+                    </Text>
+                  </>
+                );
+              }}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    );
+
+    if (Platform.OS !== 'web') {
+      return content;
+    }
+
+    return (
+      <View
+        style={{ flex: 1 }}
+        onPointerEnter={(e) => {
+          if (isMousePointer(e)) cancelScheduledClose();
+        }}
+        onPointerLeave={(e) => {
+          if (isMousePointer(e)) scheduleCloseDrawer(navigation, 150);
+        }}
+      >
+        {content}
+      </View>
+    );
+  };
 
   const statusBarHeight =
     Platform.OS === 'android'
@@ -52,6 +170,7 @@ export default function DrawerLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Drawer
+        drawerContent={renderDrawerContent}
         screenOptions={({ navigation }) => ({
           drawerActiveTintColor: isDark ? '#60A5FA' : '#2563EB',
           drawerInactiveTintColor: isDark ? '#E5E7EB' : '#374151',
@@ -68,8 +187,29 @@ export default function DrawerLayout() {
               typeof tintColor === 'string' ? tintColor : isDark ? '#FFFFFF' : '#111827';
             return (
               <Pressable
-                onPress={() => navigation.toggleDrawer()}
-                onHoverIn={Platform.OS === 'web' ? () => navigation.openDrawer() : undefined}
+                onPress={() => {
+                  cancelScheduledClose();
+                  navigation.toggleDrawer();
+                }}
+                onPointerEnter={
+                  Platform.OS === 'web'
+                    ? (e) => {
+                      if (isMousePointer(e)) {
+                        cancelScheduledClose();
+                        navigation.openDrawer();
+                      }
+                    }
+                    : undefined
+                }
+                onPointerLeave={
+                  Platform.OS === 'web'
+                    ? (e) => {
+                      if (isMousePointer(e)) {
+                        scheduleCloseDrawer(navigation, 220);
+                      }
+                    }
+                    : undefined
+                }
                 style={styles.navToggleButton}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
@@ -149,6 +289,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null),
+  },
+  drawerItemLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   householdPill: {
     flexDirection: 'row',

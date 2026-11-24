@@ -44,6 +44,20 @@ const MAPPING = {
   'tag.fill': 'label',
   'note.text': 'notes',
   'line.3.horizontal': 'menu',
+  'mic.fill': 'mic',
+  'mic.slash.fill': 'mic-off',
+  'sparkles': 'auto-awesome',
+  'cpu': 'memory',
+  'arrow.down.circle.fill': 'download',
+  'checkmark.circle.fill': 'check-circle',
+  'exclamationmark.triangle.fill': 'warning',
+  'pause.circle.fill': 'pause-circle-filled',
+  'play.circle.fill': 'play-circle-filled',
+  'arrow.clockwise': 'refresh',
+  'stop.fill': 'stop',
+  'folder.fill': 'folder',
+  'globe': 'language',
+  'bolt.fill': 'bolt',
 } as IconMapping;
 
 /**
